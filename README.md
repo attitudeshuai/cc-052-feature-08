@@ -36,6 +36,9 @@ POST /api/v1/batches                        创建种植批次
 POST /api/v1/batches/{id}/activities        农事记录（支持数组批量，client_uuid 幂等）
 POST /api/v1/batches/{id}/inspection        上传检测结果
 POST /api/v1/batches/{id}/codes             生成溯源码（返回数量与短码列表）
+POST /api/v1/plots/{id}/transfer            地块归属变更（from_farm_id 须等于当前归属；有批次时需 confirm=true）
+GET  /api/v1/plots/{id}/ownership           归属档案：归属期列表 + 每次变更动作记录
+GET  /api/v1/plots/{id}/ownership/at?time=  回放指定时刻的归属（RFC3339 或 YYYY-MM-DD，缺省当前）
 GET  /api/v1/trace/{code}                   公开溯源查询（无需鉴权，限流）
 GET  /api/v1/trace/{code}/qrcode            返回二维码 PNG（带缓存头）
 ```
@@ -50,6 +53,8 @@ activity(id, batch_id, client_uuid UNIQUE, kind /* fertilize|pesticide|irrigatio
 input_material(id, name, type, registration_no, safe_interval_days, active_ingredient)
 inspection(id, batch_id, lab, sampled_at, result /* pass|fail */, report_url, items jsonb)
 trace_code(id, batch_id, code UNIQUE, seq, printed_at, first_scanned_at, first_scan_region)
+plot_transfer(id, plot_id, from_farm_id, to_farm_id, reason, operator, created_at)
+plot_ownership(id, plot_id, farm_id, valid_from, valid_to /* NULL=当前归属 */, transfer_id)
 ```
 
 ## 8. 关键实现点
@@ -59,6 +64,7 @@ trace_code(id, batch_id, code UNIQUE, seq, printed_at, first_scanned_at, first_s
 - **图片处理**：上传走预签名 URL 直传 MinIO，服务端只存 key；生成缩略图用于扫码页。
 - **公开接口防护**：`/trace/{code}` 按 IP 限流（Redis 令牌桶，如 30 次/分钟），并对返回体脱敏。
 - **安全间隔期**：发码时 `SELECT max(happened_at)` 与 `harvest_date` 比较，不足则拒绝。
+- **地块归属变更**：`plot_transfer` 记录每次变更动作（不可变、可回看），`plot_ownership` 归属期表保存 `[valid_from, valid_to)` 区间链。变更在单事务内完成：`SELECT ... FOR UPDATE` 锁地块行 → 校验 `from_farm_id` 等于当前归属（两家同时认领时后到者被 409 拦下）→ 写变更记录 → 关闭旧归属期 → 开启新归属期 → 更新 `plot.farm_id`；`plot_ownership(plot_id) WHERE valid_to IS NULL` 部分唯一索引兜底"一块地同一时刻只有一个归属"。转出方名下仍挂批次时先返回 409 + 批次清单，`confirm=true` 才放行。变更以记录时间生效、不可回填过去，溯源码按**码生成时刻**的归属回放——已经对外给出的说法不随后续变更改变。
 
 ## 9. 技术约束与性能
 - 所有时间存 UTC，展示按 `region_code` 转换（农事日期以当地日期为准，避免跨零点算错一天）。

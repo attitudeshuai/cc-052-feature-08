@@ -14,6 +14,7 @@ type TraceCodeService struct {
 	activityRepo   *repository.ActivityRepo
 	plotRepo       *repository.PlotRepo
 	farmRepo       *repository.FarmRepo
+	ownershipRepo  *repository.OwnershipRepo
 }
 
 func NewTraceCodeService(
@@ -23,6 +24,7 @@ func NewTraceCodeService(
 	activityRepo *repository.ActivityRepo,
 	plotRepo *repository.PlotRepo,
 	farmRepo *repository.FarmRepo,
+	ownershipRepo *repository.OwnershipRepo,
 ) *TraceCodeService {
 	return &TraceCodeService{
 		codeRepo:       codeRepo,
@@ -31,6 +33,7 @@ func NewTraceCodeService(
 		activityRepo:   activityRepo,
 		plotRepo:       plotRepo,
 		farmRepo:       farmRepo,
+		ownershipRepo:  ownershipRepo,
 	}
 }
 
@@ -117,7 +120,14 @@ func (s *TraceCodeService) Trace(code string, region string) (*model.TraceRespon
 		return nil, err
 	}
 
-	farm, err := s.farmRepo.GetByID(plot.FarmID)
+	// 归属按"码生成时刻"回放：已经对外给出的说法不随后续归属变更改变。
+	// 查不到归属期（码早于首条归属期，理论上不出现）时回退到当前归属。
+	farmID := plot.FarmID
+	if ownerID, err := s.ownershipRepo.OwnerAt(plot.ID, tc.CreatedAt); err == nil && ownerID > 0 {
+		farmID = ownerID
+	}
+
+	farm, err := s.farmRepo.GetByID(farmID)
 	if err != nil {
 		return nil, err
 	}

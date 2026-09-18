@@ -37,6 +37,27 @@ func (r *BatchRepo) UpdateStatus(id int64, status model.BatchStatus) error {
 	return err
 }
 
+// CountByPlot 统计地块名下挂着的批次总数（归属变更前的提示用）。
+func (r *BatchRepo) CountByPlot(plotID int64) (int, error) {
+	var count int
+	query := `SELECT COUNT(*) FROM crop_batch WHERE plot_id = $1`
+	if err := r.db.Get(&count, query, plotID); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// ListByPlot 按地块列批次，最新的在前，最多 limit 条。
+func (r *BatchRepo) ListByPlot(plotID int64, limit int) ([]model.CropBatch, error) {
+	batches := make([]model.CropBatch, 0)
+	query := `SELECT id, plot_id, crop_id, sowing_date, harvest_date, expected_yield_kg, status, created_at
+	          FROM crop_batch WHERE plot_id = $1 ORDER BY id DESC LIMIT $2`
+	if err := r.db.Select(&batches, query, plotID, limit); err != nil {
+		return nil, err
+	}
+	return batches, nil
+}
+
 func (r *BatchRepo) SetHarvestDate(id int64, harvestDate time.Time) error {
 	query := `UPDATE crop_batch SET harvest_date = $1, status = 'harvested' WHERE id = $2`
 	_, err := r.db.Exec(query, harvestDate, id)

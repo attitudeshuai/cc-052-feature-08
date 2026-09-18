@@ -16,6 +16,7 @@ func Setup(
 	activityH *handler.ActivityHandler,
 	inspectionH *handler.InspectionHandler,
 	traceCodeH *handler.TraceCodeHandler,
+	ownershipH *handler.OwnershipHandler,
 	healthH *handler.HealthHandler,
 	rdb *redis.Client,
 ) *gin.Engine {
@@ -36,6 +37,11 @@ func Setup(
 		v1.POST("/plots", plotH.Create)
 		v1.GET("/plots/:id", plotH.GetByID)
 		v1.GET("/plots", plotH.ListByFarm)
+
+		// Plot ownership（归属变更与回放）
+		v1.POST("/plots/:id/transfer", ownershipH.Transfer)
+		v1.GET("/plots/:id/ownership", ownershipH.History)
+		v1.GET("/plots/:id/ownership/at", ownershipH.OwnerAt)
 
 		// Batches
 		v1.POST("/batches", batchH.Create)

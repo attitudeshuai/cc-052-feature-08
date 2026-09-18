@@ -50,3 +50,16 @@ func InternalError(c *gin.Context, message string) {
 func Forbidden(c *gin.Context, message string) {
 	Error(c, http.StatusForbidden, message)
 }
+
+func Conflict(c *gin.Context, message string) {
+	Error(c, http.StatusConflict, message)
+}
+
+// ConflictWithData 返回 409 并携带结构化数据（如归属变更前的批次提示）。
+func ConflictWithData(c *gin.Context, message string, data interface{}) {
+	c.JSON(http.StatusConflict, APIResponse{
+		Code:    http.StatusConflict,
+		Message: message,
+		Data:    data,
+	})
+}
