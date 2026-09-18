@@ -47,10 +47,13 @@ func (r *TraceCodeRepo) GetByCode(code string) (*model.TraceCode, error) {
 	return &tc, nil
 }
 
-func (r *TraceCodeRepo) MarkScanned(id int64, region string) error {
-	now := time.Now()
-	query := `UPDATE trace_code SET first_scanned_at = $1, first_scan_region = $2 WHERE id = $3`
-	_, err := r.db.Exec(query, now, region, id)
+// MarkScanned 记录首扫。scannedAt 作为对外说法的归属锚点，由调用方传入，
+// 保证"定格时点"和"按该时点解析归属"是同一时刻。
+func (r *TraceCodeRepo) MarkScanned(id int64, region string, scannedAt time.Time) error {
+	query := `UPDATE trace_code
+	          SET first_scanned_at = $1, first_scan_region = $2
+	          WHERE id = $3 AND first_scanned_at IS NULL`
+	_, err := r.db.Exec(query, scannedAt, region, id)
 	return err
 }
 

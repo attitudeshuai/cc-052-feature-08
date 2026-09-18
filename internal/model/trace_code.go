@@ -36,6 +36,11 @@ type TraceFarmInfo struct {
 	Name       string `json:"name"`
 	RegionCode string `json:"region_code"`
 	PlotName   string `json:"plot_name"`
+	// OwnedAsOf 是该说法所依据的归属时点（RFC3339）。已对外的码冻结在首扫时刻。
+	OwnedAsOf string `json:"owned_as_of,omitempty"`
+	// IsCurrentOwner 标识上述主体是否仍是该地块当前归属方。
+	// 地块后续变更归属后，历史码这里为 false，但对外说法保持不变。
+	IsCurrentOwner bool `json:"is_current_owner"`
 }
 
 type TraceActivityInfo struct {

@@ -5,6 +5,7 @@ import (
 	"cc-052/internal/repository"
 	"cc-052/pkg/tracecode"
 	"fmt"
+	"time"
 )
 
 type TraceCodeService struct {
@@ -14,6 +15,7 @@ type TraceCodeService struct {
 	activityRepo   *repository.ActivityRepo
 	plotRepo       *repository.PlotRepo
 	farmRepo       *repository.FarmRepo
+	ownershipRepo  *repository.OwnershipRepo
 }
 
 func NewTraceCodeService(
@@ -23,6 +25,7 @@ func NewTraceCodeService(
 	activityRepo *repository.ActivityRepo,
 	plotRepo *repository.PlotRepo,
 	farmRepo *repository.FarmRepo,
+	ownershipRepo *repository.OwnershipRepo,
 ) *TraceCodeService {
 	return &TraceCodeService{
 		codeRepo:       codeRepo,
@@ -31,6 +34,7 @@ func NewTraceCodeService(
 		activityRepo:   activityRepo,
 		plotRepo:       plotRepo,
 		farmRepo:       farmRepo,
+		ownershipRepo:  ownershipRepo,
 	}
 }
 
@@ -96,15 +100,28 @@ func (s *TraceCodeService) GenerateCodes(batchID int64, count int) ([]string, er
 	return allCodes, nil
 }
 
-func (s *TraceCodeService) Trace(code string, region string) (*model.TraceResponse, error) {
+func (s *TraceCodeService) Trace(code string, region string, asOf *time.Time) (*model.TraceResponse, error) {
 	tc, err := s.codeRepo.GetByCode(code)
 	if err != nil {
 		return nil, fmt.Errorf("code not found: %w", err)
 	}
 
-	isFirstScan := tc.FirstScannedAt == nil
+	// 确定"对外说法"的归属时点：
+	//  - 指定 as_of 回放：按该时点取归属，且不改变首扫状态；
+	//  - 已首扫的码：说法冻结在首扫时刻，地块之后再转手也不变；
+	//  - 首次扫描：以当前归属定格，并记录首扫时间。
+	isFirstScan := tc.FirstScannedAt == nil && asOf == nil
+	var anchor time.Time
+	switch {
+	case asOf != nil:
+		anchor = *asOf
+	case tc.FirstScannedAt != nil:
+		anchor = *tc.FirstScannedAt
+	default:
+		anchor = time.Now()
+	}
 	if isFirstScan {
-		s.codeRepo.MarkScanned(tc.ID, region)
+		s.codeRepo.MarkScanned(tc.ID, region, anchor)
 	}
 
 	batch, err := s.batchRepo.GetByID(tc.BatchID)
@@ -117,10 +134,23 @@ func (s *TraceCodeService) Trace(code string, region string) (*model.TraceRespon
 		return nil, err
 	}
 
-	farm, err := s.farmRepo.GetByID(plot.FarmID)
+	// 按归属时点回放：取地块在 anchor 时刻挂在哪家名下。
+	period, perr := s.ownershipRepo.OwnershipAt(plot.ID, anchor)
+	var farmID int64
+	if perr != nil {
+		// 兜底：理论上迁移已为每块地从创建时回填归属段，不会走到这里。
+		farmID = plot.FarmID
+	} else {
+		farmID = period.FarmID
+	}
+	farm, err := s.farmRepo.GetByID(farmID)
 	if err != nil {
 		return nil, err
 	}
+
+	// 当前归属用于标注历史说法是否仍与现状一致（不改变说法本身）。
+	current, cerr := s.ownershipRepo.CurrentOwnership(plot.ID)
+	isCurrentOwner := cerr != nil || current.FarmID == farmID
 
 	activities, err := s.activityRepo.ListByBatch(tc.BatchID)
 	if err != nil {
@@ -138,9 +168,11 @@ func (s *TraceCodeService) Trace(code string, region string) (*model.TraceRespon
 			HarvestDate: "",
 		},
 		Farm: &model.TraceFarmInfo{
-			Name:       farm.Name,
-			RegionCode: farm.RegionCode,
-			PlotName:   plot.Name,
+			Name:           farm.Name,
+			RegionCode:     farm.RegionCode,
+			PlotName:       plot.Name,
+			OwnedAsOf:      anchor.Format(time.RFC3339),
+			IsCurrentOwner: isCurrentOwner,
 		},
 		Activities: make([]model.TraceActivityInfo, 0),
 	}

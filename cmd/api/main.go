@@ -57,6 +57,7 @@ func main() {
 	activityRepo := repository.NewActivityRepo(db)
 	inspectionRepo := repository.NewInspectionRepo(db)
 	codeRepo := repository.NewTraceCodeRepo(db)
+	ownershipRepo := repository.NewOwnershipRepo(db)
 	inputMaterialRepo := repository.NewInputMaterialRepo(db)
 	_ = inputMaterialRepo
 
@@ -66,7 +67,8 @@ func main() {
 	batchSvc := service.NewBatchService(batchRepo, plotRepo, farmRepo)
 	activitySvc := service.NewActivityService(activityRepo, batchRepo)
 	inspectionSvc := service.NewInspectionService(inspectionRepo, batchRepo)
-	traceCodeSvc := service.NewTraceCodeService(codeRepo, batchRepo, inspectionRepo, activityRepo, plotRepo, farmRepo)
+	traceCodeSvc := service.NewTraceCodeService(codeRepo, batchRepo, inspectionRepo, activityRepo, plotRepo, farmRepo, ownershipRepo)
+	ownershipSvc := service.NewOwnershipService(ownershipRepo, plotRepo, farmRepo)
 
 	// Handlers
 	farmH := handler.NewFarmHandler(farmSvc)
@@ -75,10 +77,11 @@ func main() {
 	activityH := handler.NewActivityHandler(activitySvc)
 	inspectionH := handler.NewInspectionHandler(inspectionSvc)
 	traceCodeH := handler.NewTraceCodeHandler(traceCodeSvc)
+	ownershipH := handler.NewOwnershipHandler(ownershipSvc)
 	healthH := handler.NewHealthHandler(db, rdb)
 
 	// Router
-	r := router.Setup(farmH, plotH, batchH, activityH, inspectionH, traceCodeH, healthH, rdb)
+	r := router.Setup(farmH, plotH, batchH, activityH, inspectionH, traceCodeH, ownershipH, healthH, rdb)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.ServerPort,

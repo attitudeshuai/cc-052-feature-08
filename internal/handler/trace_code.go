@@ -6,6 +6,7 @@ import (
 	"cc-052/pkg/response"
 	"github.com/gin-gonic/gin"
 	"strconv"
+	"time"
 )
 
 type TraceCodeHandler struct {
@@ -44,7 +45,18 @@ func (h *TraceCodeHandler) Trace(c *gin.Context) {
 		region = c.ClientIP()
 	}
 
-	trace, err := h.svc.Trace(code, region)
+	// 可选 as_of（RFC3339）：按历史时点回放归属，只读、不改变首扫状态。
+	var asOf *time.Time
+	if raw := c.Query("as_of"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			response.BadRequest(c, "invalid as_of, expect RFC3339, e.g. 2026-09-01T08:00:00Z")
+			return
+		}
+		asOf = &t
+	}
+
+	trace, err := h.svc.Trace(code, region, asOf)
 	if err != nil {
 		response.NotFound(c, "trace code not found")
 		return
